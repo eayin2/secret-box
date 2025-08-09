@@ -1,0 +1,45 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+*.log
+
+# --- uv / Astral ---
+.venv/
+.uv/
+.uv-cache/
+.uv-python/
+.python-version
+
+# --- IDEs / Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Project-specific secrets ---
+*.enc
+*.secret.json
+secret_*.json
+*_envelope.json
+*_envelope.enc
+testdata/
+
+# --- Other temporary files ---
+*.tmp
+*.bak
+
+# JetBrains IDE project files
+*.iml
