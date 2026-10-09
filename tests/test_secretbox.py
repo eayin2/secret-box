@@ -1,4 +1,6 @@
 import copy
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -6,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import warnings
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -190,6 +193,53 @@ class CLITests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "CLI secret 🔐")
             self.assertEqual(result.stderr, "")
+
+    def test_hidden_prompt_preserves_special_characters_and_whitespace(self):
+        secret = "  secret!$HOME $(example) `example` 'single' \"double\" \\ 🔐  "
+        args = secretbox.build_parser().parse_args([
+            "encrypt", "--secret-prompt", "--passphrase", "first",
+            "--passphrase", "second", "--envelope-out", str(self.output),
+        ])
+        stdout = io.StringIO()
+        with patch.object(secretbox.getpass, "getpass", return_value=secret), redirect_stdout(stdout):
+            args.func(args)
+        self.assertNotIn(secret, stdout.getvalue())
+        for phrase in ("first", "second"):
+            self.assertEqual(secretbox.decrypt_envelope(self.output.read_bytes(), phrase), secret.encode("utf-8"))
+
+    def test_hidden_prompt_refuses_visible_input_fallback(self):
+        def unavailable_prompt(*args):
+            warnings.warn("Cannot hide input", secretbox.getpass.GetPassWarning)
+            self.fail("Prompt must stop before reading visible input")
+
+        with patch.object(secretbox.getpass, "getpass", side_effect=unavailable_prompt):
+            with self.assertRaisesRegex(ValueError, "Hidden input is unavailable"):
+                secretbox.prompt_secret()
+
+    def test_cancelled_prompt_does_not_create_envelope(self):
+        argv = [str(SCRIPT), "encrypt", "--secret-prompt", "--passphrase", "first",
+                "--envelope-out", str(self.output)]
+        for exception in (EOFError, KeyboardInterrupt):
+            stderr = io.StringIO()
+            with self.subTest(exception=exception), patch.object(sys, "argv", argv):
+                with patch.object(secretbox.getpass, "getpass", side_effect=exception):
+                    with redirect_stderr(stderr), self.assertRaises(SystemExit) as result:
+                        secretbox.main()
+                self.assertEqual(result.exception.code, 1)
+                self.assertIn("Input cancelled", stderr.getvalue())
+                self.assertFalse(self.output.exists())
+
+    def test_prompt_and_plaintext_are_mutually_exclusive(self):
+        result = self.encrypt("first", extra=["--secret-prompt"])
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_literal_special_characters_in_plaintext_argument(self):
+        secret = "quotes ' \" ! $ ` \\ and spaces"
+        result = self.run_cli("encrypt", "--secret-plaintext", secret,
+                              "--passphrase", "first", "--envelope-out", self.output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(secretbox.decrypt_envelope(self.output.read_bytes(), "first"), secret.encode())
 
     def test_wrong_passphrase_outputs_no_plaintext_or_traceback(self):
         self.assertEqual(self.encrypt("first", "second").returncode, 0)

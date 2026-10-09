@@ -12,6 +12,25 @@ project's virtual environment first.
 
 ## Usage
 
+### Enter a secret without shell quoting
+
+Use `--secret-prompt` to type or paste a single-line secret at a hidden prompt:
+
+```bash
+python secretbox.py encrypt \
+    --secret-prompt \
+    --passphrase 'first independent passphrase' \
+    --passphrase 'second independent passphrase' \
+    --envelope-out secret.enc
+```
+
+After `Secret plaintext (hidden):` appears, enter the secret exactly as it is,
+without adding surrounding quotes, and press Enter. Characters such as `!`,
+`$`, quotes, and backticks are treated literally. Input is not displayed or
+included in the shell command history. The prompt requires a terminal with
+hidden input support; it will stop rather than fall back to visible input.
+Press Ctrl+C to cancel. Use either `--secret-prompt` or `--secret-plaintext`.
+
 ### Encrypt for multiple passphrases
 
 Repeat `--passphrase` for each person or recovery passphrase that should have
@@ -20,9 +39,9 @@ passphrases are supported and matched exactly, including whitespace.
 
 ```bash
 python secretbox.py encrypt \
-    --secret-plaintext "your secret" \
-    --passphrase "first independent passphrase" \
-    --passphrase "second independent passphrase" \
+    --secret-plaintext 'your secret' \
+    --passphrase 'first independent passphrase' \
+    --passphrase 'second independent passphrase' \
     --envelope-out secret.enc
 ```
 
@@ -33,7 +52,7 @@ Supply just one of the passphrases used during encryption:
 ```bash
 python secretbox.py decrypt \
     --envelope-file secret.enc \
-    --passphrase "second independent passphrase"
+    --passphrase 'second independent passphrase'
 ```
 
 The secret is written to standard output without an added newline. An incorrect
@@ -46,8 +65,8 @@ The original command still works:
 
 ```bash
 python secretbox.py encrypt \
-    --secret-plaintext "your secret" \
-    --passphrase "one passphrase" \
+    --secret-plaintext 'your secret' \
+    --passphrase 'one passphrase' \
     --envelope-out secret.enc
 ```
 
@@ -56,6 +75,16 @@ versions can still read these files. Existing envelopes remain readable by this
 version. Multiple-passphrase envelopes use version 2 and require this version of
 the tool. To give an existing secret multiple passphrases, decrypt it and encrypt
 it again with the desired passphrases. Use `--force` to overwrite an output file.
+
+### Shell quoting errors (`!`, `dquote>`)
+
+In interactive zsh, `!` can trigger history expansion even inside double quotes,
+before Python starts. For a value containing `!`, use straight single quotes:
+`--secret-plaintext 'example!secret'`. The same rule applies to passphrases.
+If the terminal shows `dquote>`, it is waiting for a closing double quote;
+press Ctrl+C to cancel the unfinished command and re-enter it with matched quotes.
+If the secret contains both kinds of quotes, use `--secret-prompt` to avoid shell
+quoting entirely. See the [zsh history expansion documentation](https://zsh.sourceforge.io/Doc/Release/Expansion.html#History-Expansion).
 
 ## How multiple passphrases work
 

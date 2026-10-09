@@ -2,7 +2,7 @@
 """
 secretbox.py
 
-- Provide the secret string to encrypt via --secret-plaintext
+- Provide the secret via --secret-plaintext or hidden input with --secret-prompt
 - Repeat --passphrase to allow any one of several passphrases to unlock a secret
 - KDF: scrypt (n/r/p/length + salt are stored in the envelope)
 - Authenticated encryption: Fernet
@@ -23,9 +23,11 @@ Usage:
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
+import warnings
 from base64 import b64decode, urlsafe_b64encode
 from typing import Sequence, Tuple
 
@@ -44,6 +46,16 @@ MAX_SCRYPT_WORK = 2**24  # Sum of n*r*p across all key slots
 
 
 # --- I/O helpers
+
+def prompt_secret() -> str:
+    """Read one line without shell interpretation or terminal echo."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass("Secret plaintext (hidden): ")
+    except getpass.GetPassWarning:
+        raise ValueError("Hidden input is unavailable. Run --secret-prompt from an interactive terminal.") from None
+
 
 def read_bytes(filepath: str) -> bytes:
     with open(filepath, "rb") as f:
@@ -226,8 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pe = sub.add_parser("encrypt", help="Encrypt a secret string into an envelope JSON.")
-    pe.add_argument("--secret-plaintext", required=True,
-                    help="Secret plaintext string to encrypt.")
+    secret_input = pe.add_mutually_exclusive_group(required=True)
+    secret_input.add_argument("--secret-plaintext",
+                              help="Secret plaintext string to encrypt (requires shell quoting).")
+    secret_input.add_argument("--secret-prompt", action="store_true",
+                              help="Enter the secret at a hidden prompt; special characters are literal.")
     pe.add_argument("--passphrase", required=True, action="append",
                     help=f"Passphrase allowed to unlock the secret. Repeat for up to {MAX_PASSPHRASES} distinct passphrases.")
     pe.add_argument("--envelope-out", required=True,
@@ -235,7 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--force", action="store_true",
                     help="Overwrite existing envelope file.")
     pe.set_defaults(func=lambda args: encrypt_command(
-        secret_plaintext=args.secret_plaintext,
+        secret_plaintext=prompt_secret() if args.secret_prompt else args.secret_plaintext,
         passphrase=args.passphrase,
         envelope_out=args.envelope_out,
         force=args.force,
@@ -258,6 +273,8 @@ def main() -> None:
     args = parser.parse_args()
     try:
         args.func(args)
+    except (EOFError, KeyboardInterrupt):
+        parser.exit(1, "\nInput cancelled.\n")
     except (OSError, ValueError) as error:
         parser.exit(1, f"{error}\n")
 
